@@ -97,7 +97,7 @@ class timeseries_exponentiation_layer(keras.layers.Layer):
         output = tf.TensorArray(tf.float32, size=0, dynamic_size=True)
 
         output_index = 0
-        for timepoint in timeseries_input:
+        for timepoint in inputs:
             exponentiated_timepoint = tf.math.exp(timepoint)
             output = output.write(output_index, exponentiated_timepoint)
             output_index += 1
@@ -119,8 +119,13 @@ class LFADS_Model(keras.Model):
         self.batch_size = batch_size
         self.number_of_factors = number_of_factors
 
-        self.translation_weights = self.add_weight(name= str(session_name) + "_Translation_Input_Weights",
+        self.translation_input_weights = self.add_weight(name= str(session_name) + "_Translation_Input_Weights",
                                                    shape=(self.number_of_neurons, self.number_of_factors),
+                                                   initializer='normal',
+                                                   trainable=True)
+
+        self.translation_output_weights = self.add_weight(name= str(session_name) + "_Translation_Output_Weights",
+                                                   shape=(self.number_of_factors, self.number_of_neurons),
                                                    initializer='normal',
                                                    trainable=True)
 
@@ -130,6 +135,7 @@ class LFADS_Model(keras.Model):
                                                    trainable=True)
 
         self.timeseries_activation_layer = timeseries_multiplication_layer()
+        self.exponentiation_layer = timeseries_exponentiation_layer()
         self.kl_scale = 0.01
 
         # Create Model Components
@@ -180,7 +186,7 @@ class LFADS_Model(keras.Model):
     def call(self, data):
 
         # Encode Session Neural Data Into Factors
-        factor_activity = self.timeseries_activation_layer([data, self.translation_weights])
+        factor_activity = self.timeseries_activation_layer([data, self.translation_input_weights])
 
         # Encode Factor Activity Into Initial States
         z_mean, z_log_var, z = self.encoder(factor_activity)
@@ -192,16 +198,19 @@ class LFADS_Model(keras.Model):
         reconstructed_factor_activity = self.timeseries_activation_layer([low_dimensional_trajectories, self.latent_space_mapping_weights])
 
         # Translation Factor Activity Back Into Neural Activity
-        reconstruction = self.timeseries_activation_layer([reconstructed_factor_activity, tf.linalg.pinv(self.translation_weights)])
+        reconstruction = self.timeseries_activation_layer([reconstructed_factor_activity, self.translation_output_weights])
+        #reconstruction = self.timeseries_activation_layer([reconstructed_factor_activity, tf.linalg.pinv(self.translation_input_weights)])
+
+        # Exponentiate for some reason
+        reconstruction = self.exponentiation_layer(reconstruction)
 
         return reconstruction
 
     def train_step(self, data):
 
         with tf.GradientTape() as tape:
-
             # Encode Session Neural Data Into Factors
-            factor_activity = self.timeseries_activation_layer([data, self.translation_weights])
+            factor_activity = self.timeseries_activation_layer([data, self.translation_input_weights])
 
             # Encode Factor Activity Into Initial States
             z_mean, z_log_var, z = self.encoder(factor_activity)
@@ -213,14 +222,19 @@ class LFADS_Model(keras.Model):
             reconstructed_factor_activity = self.timeseries_activation_layer([low_dimensional_trajectories, self.latent_space_mapping_weights])
 
             # Translation Factor Activity Back Into Neural Activity
-            reconstruction = self.timeseries_activation_layer([reconstructed_factor_activity, tf.linalg.pinv(self.translation_weights)])
+            reconstruction = self.timeseries_activation_layer([reconstructed_factor_activity, self.translation_output_weights])
+            #reconstruction = self.timeseries_activation_layer([reconstructed_factor_activity, tf.linalg.pinv(self.translation_input_weights)])
+
+            # Exponentiate for some reason
+            reconstruction = self.exponentiation_layer(reconstruction)
 
             # Create loss Functions
             reconstruction_loss = tf.reduce_mean(tf.reduce_sum(keras.losses.mean_squared_error(data, reconstruction), axis=-1))
 
             kl_loss = -0.5 * (1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var))
             kl_loss = tf.reduce_mean(tf.reduce_sum(kl_loss, axis=1))
-            total_loss = reconstruction_loss + (self.kl_scale * kl_loss) #0.02 #0.1 pretty good
+            #total_loss = reconstruction_loss + (self.kl_scale * kl_loss) #0.02 #0.1 pretty good
+            total_loss = reconstruction_loss + (1 * kl_loss)
 
         grads = tape.gradient(total_loss, self.trainable_weights)
         grads, _ = tf.clip_by_global_norm(grads, 200.0)
