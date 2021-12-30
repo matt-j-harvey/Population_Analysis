@@ -39,8 +39,7 @@ def create_trial_tensor(delta_f_matrix, onsets, start_window, stop_window):
 
 
 
-
-def plot_factors(trial_loadings, time_loadings, switch_indexes, visual_blocks, odour_blocks, save_directory, session_name, trial_start, perfect_switch_trials):
+def plot_factors_combined(trial_loadings, time_loadings, visual_blocks, odour_blocks, save_directory, session_name, trial_start, vis_1_indexes, vis_2_indexes, plot_switching=False, switch_indexes=None, perfect_switch_trials=None):
 
     number_of_factors = np.shape(trial_loadings)[1]
     rows = number_of_factors
@@ -48,6 +47,7 @@ def plot_factors(trial_loadings, time_loadings, switch_indexes, visual_blocks, o
 
     figure_count = 1
     figure_1 = plt.figure()
+    figure_1.suptitle(session_name)
     for factor in range(number_of_factors):
         time_axis = figure_1.add_subplot(rows,  columns, figure_count)
         trial_axis = figure_1.add_subplot(rows, columns, figure_count + 1)
@@ -62,17 +62,89 @@ def plot_factors(trial_loadings, time_loadings, switch_indexes, visual_blocks, o
         trial_axis.plot(trial_data, c='orange')
 
         # Plot Switch Trials
-        number_of_switches = len(switch_indexes)
-        for switch_index in range(number_of_switches):
-            switch_time = switch_indexes[switch_index]
-            switch_type = perfect_switch_trials[switch_index]
+        if plot_switching == True:
+            number_of_switches = len(switch_indexes)
+            for switch_index in range(number_of_switches):
+                switch_time = switch_indexes[switch_index]
+                switch_type = perfect_switch_trials[switch_index]
 
-            if switch_type == 1:
-                colour='m'
-            else:
-                colour='k'
+                if switch_type == 1:
+                    colour='m'
+                else:
+                    colour='k'
 
-            trial_axis.vlines(switch_time, ymin=np.min(trial_data), ymax=np.max(trial_data), color=colour)
+                trial_axis.vlines(switch_time, ymin=np.min(trial_data), ymax=np.max(trial_data), color=colour)
+
+
+        # Mark Stimuli Onset
+        time_axis.vlines(0-trial_start, ymin=np.min(time_data), ymax=np.max(time_data), color='k')
+
+        # Highligh Blocks
+        for block in visual_blocks:
+            trial_axis.axvspan(block[0], block[1], alpha=0.2, color='blue')
+        for block in odour_blocks:
+            trial_axis.axvspan(block[0], block[1], alpha=0.2, color='green')
+
+        # Scatter Trials
+        print("Trial Data Shape", np.shape(trial_data))
+        vis_1_points = []
+        for index in vis_1_indexes:
+            vis_1_points.append(trial_data[index])
+
+        vis_2_points = []
+        for index in vis_2_indexes:
+            vis_2_points.append(trial_data[index])
+
+        trial_axis.scatter(vis_1_indexes, vis_1_points, c='b', alpha=0.5)
+        trial_axis.scatter(vis_2_indexes, vis_2_points, c='r', alpha=0.5)
+
+
+    figure_1.set_size_inches(18.5, 16)
+    figure_1.tight_layout()
+    plt.savefig(save_directory + "/" + session_name + ".png", dpi=200)
+    plt.close()
+
+
+
+
+
+
+
+def plot_factors(trial_loadings, time_loadings, visual_blocks, odour_blocks, save_directory, session_name, trial_start, plot_switching=False, switch_indexes=None, perfect_switch_trials=None):
+
+    number_of_factors = np.shape(trial_loadings)[1]
+    rows = number_of_factors
+    columns = 2
+
+    figure_count = 1
+    figure_1 = plt.figure()
+    figure_1.suptitle(session_name)
+    for factor in range(number_of_factors):
+        time_axis = figure_1.add_subplot(rows,  columns, figure_count)
+        trial_axis = figure_1.add_subplot(rows, columns, figure_count + 1)
+        figure_count += 2
+
+        time_axis.set_title("Factor " + str(factor) + " Time Loadings")
+        trial_axis.set_title("Factor " + str(factor) + " Trial Loadings")
+        time_data = time_loadings[:, factor]
+        trial_data = trial_loadings[:, factor]
+
+        time_axis.plot(time_data)
+        trial_axis.plot(trial_data, c='orange')
+
+        # Plot Switch Trials
+        if plot_switching == True:
+            number_of_switches = len(switch_indexes)
+            for switch_index in range(number_of_switches):
+                switch_time = switch_indexes[switch_index]
+                switch_type = perfect_switch_trials[switch_index]
+
+                if switch_type == 1:
+                    colour='m'
+                else:
+                    colour='k'
+
+                trial_axis.vlines(switch_time, ymin=np.min(trial_data), ymax=np.max(trial_data), color=colour)
 
 
         # Mark Stimuli Onset
@@ -103,6 +175,7 @@ def smooth_delta_f_matrix(delta_f_maxtrix):
         smoothed_delta_f.append(smoothed_trace)
 
     smoothed_delta_f = np.array(smoothed_delta_f)
+    smoothed_delta_f = np.nan_to_num(smoothed_delta_f)
     return smoothed_delta_f
 
 
@@ -111,7 +184,7 @@ def normalise_delta_f_matrix(delta_f_matrix):
     delta_f_matrix = np.transpose(delta_f_matrix)
     # Normalise Each Neuron to Min 0, Max 1
 
-    #Subtract Min To Get Min = 0
+    # Subtract Min To Get Min = 0
     min_vector = np.min(delta_f_matrix, axis=0)
     delta_f_matrix = np.subtract(delta_f_matrix, min_vector)
 
@@ -119,7 +192,12 @@ def normalise_delta_f_matrix(delta_f_matrix):
     max_vector = np.max(delta_f_matrix, axis=0)
     delta_f_matrix = np.divide(delta_f_matrix, max_vector)
 
+    # Remove Nans
+    delta_f_matrix = np.nan_to_num(delta_f_matrix)
+
+    # Put Back Into Original Shape
     delta_f_matrix = np.transpose(delta_f_matrix)
+
     return delta_f_matrix
 
 
@@ -142,38 +220,31 @@ def get_block_boundaries(combined_onsets, visual_context_onsets, odour_context_o
 
     # Iterate Through All Subsequent Onsets
     number_of_onsets = len(combined_onsets)
-    print("Nubmer of onsets", number_of_onsets)
     for onset_index in range(1, number_of_onsets):
 
         # Get Onset
         onset = combined_onsets[onset_index]
-        print("Current Onset: ", onset)
 
         # If we are currently in an Visual Block
         if current_block_type == 0:
-            print("CUrrent Block Visual")
 
             # If The Next Onset is An Odour Block - Block Finish, add Block To Boundaries
             if onset in odour_context_onsets:
-                print("Weve got on odour onset")
-                current_block_end = onset_index
+                current_block_end = onset_index-1
                 visual_blocks.append([current_block_start, current_block_end])
                 current_block_type = 1
                 current_block_start = onset_index
 
         # If we Are currently in an Odour BLock
         if current_block_type == 1:
-            print("Current Block Olfactoerty")
 
             # If The NExt Onset Is a Visual Trial - BLock Finish Add Block To Block Boundaires
             if onset in visual_context_onsets:
-                current_block_end = onset_index
+                current_block_end = onset_index - 1
                 odour_blocks.append([current_block_start, current_block_end])
                 current_block_type = 0
                 current_block_start = onset_index
 
-    print("Visua blocks", visual_blocks)
-    print("Odour blocks", odour_blocks)
     return visual_blocks, odour_blocks
 
 
@@ -183,7 +254,7 @@ def get_block_boundaries(combined_onsets, visual_context_onsets, odour_context_o
 
 
 
-def perform_tensor_component_analysis(file_list, save_directory, trial_start=-10, trial_stop=42, number_of_factors=7):
+def perform_tensor_component_analysis(file_list, base_directory, plot_save_directory, stimuli="vis_1", trial_start=-10, trial_stop=48, number_of_factors=7, offset=1):
 
     for matlab_file_location in file_list:
 
@@ -197,62 +268,138 @@ def perform_tensor_component_analysis(file_list, save_directory, trial_start=-10
 
         # Extract Delta F Matrix
         delta_f_matrix = data_object.dF
+        delta_f_matrix = np.nan_to_num(delta_f_matrix)
         delta_f_matrix = smooth_delta_f_matrix(delta_f_matrix)
         delta_f_matrix = normalise_delta_f_matrix(delta_f_matrix)
 
-        # Extract Visual Onsets
-        visual_context_vis_1_onsets = data_object.vis1_frames[0]
-        odour_context_vis_1_onsets  = data_object.irrel_vis1_frames[0]
-        all_vis_1_onsets = np.concatenate([visual_context_vis_1_onsets, odour_context_vis_1_onsets])
-        all_vis_1_onsets.sort()
-        expected_odour_trials = data_object.mismatch_trials['exp_odour'][0]
+        # Extract Switch Trials
+        expected_odour_trials = data_object.mismatch_trials['exp_odour'][offset]
         perfect_switch_trials = data_object.mismatch_trials['perfect_switch']
 
+        # Extract Visual Onsets
+        if stimuli=='vis_1':
+            visual_context_onsets = data_object.vis1_frames[offset]
+            odour_context_onsets  = data_object.irrel_vis1_frames[offset]
+            all_onsets = np.concatenate([visual_context_onsets, odour_context_onsets])
+            all_onsets.sort()
 
-        # Get Trial Indexes Of Switches
-        switch_indexes = []
-        for trial in expected_odour_trials:
-            index = list(all_vis_1_onsets).index(trial)
-            switch_indexes.append(index)
-        print("Switch Indexes", switch_indexes)
+            # Get Trial Indexes Of Switches
+            switch_indexes = []
+            for trial in expected_odour_trials:
+                index = list(all_onsets).index(trial)
+                switch_indexes.append(index)
+
+        if stimuli=='vis_2':
+            visual_context_onsets = data_object.vis2_frames[offset]
+            odour_context_onsets  = data_object.irrel_vis2_frames[offset]
+            all_onsets = np.concatenate([visual_context_onsets, odour_context_onsets])
+            all_onsets.sort()
+
+        if stimuli == 'all':
+            visual_context_onsets_vis_1 = data_object.vis1_frames[offset]
+            visual_context_onsets_vis_2 = data_object.vis2_frames[offset]
+            odour_context_onsets_vis_1  = data_object.irrel_vis1_frames[offset]
+            odour_context_onsets_vis_2  = data_object.irrel_vis2_frames[offset]
+
+            all_onsets = np.concatenate([visual_context_onsets_vis_1, visual_context_onsets_vis_2, odour_context_onsets_vis_1, odour_context_onsets_vis_2])
+            all_onsets.sort()
+
+            visual_context_onsets = np.concatenate([visual_context_onsets_vis_1, visual_context_onsets_vis_2])
+            visual_context_onsets.sort()
+
+            odour_context_onsets = np.concatenate([odour_context_onsets_vis_1, odour_context_onsets_vis_2])
+            odour_context_onsets.sort()
+
+            all_vis_1_onsets = np.concatenate([visual_context_onsets_vis_1, odour_context_onsets_vis_1])
+            all_vis_2_onsets = np.concatenate([visual_context_onsets_vis_2, odour_context_onsets_vis_2])
+
+            # Get Trial Indexes Of Switches
+            switch_indexes = []
+            for trial in expected_odour_trials:
+                index = list(all_onsets).index(trial)
+                switch_indexes.append(index)
+
+            # Get Trial Indexes Of Vis 1
+            vis_1_indexes = []
+            for trial in all_vis_1_onsets:
+                if trial + trial_stop < np.shape(delta_f_matrix)[1]:
+                    index = list(all_onsets).index(trial)
+                    vis_1_indexes.append(index)
+
+            # Get Trial Indexes of Vis 2
+            vis_2_indexes = []
+            for trial in all_vis_2_onsets:
+                if trial + trial_stop < np.shape(delta_f_matrix)[1]:
+                    index = list(all_onsets).index(trial)
+                    vis_2_indexes.append(index)
+
+        print("Nubmer of onsets", len(list(all_onsets)))
 
         # Get Block Boundaires
-        print("Combined", all_vis_1_onsets)
-        print("Visual ", visual_context_vis_1_onsets)
-        print("Odour", odour_context_vis_1_onsets)
-        visual_blocks, odour_blocks = get_block_boundaries(all_vis_1_onsets, visual_context_vis_1_onsets, odour_context_vis_1_onsets)
-
+        visual_blocks, odour_blocks = get_block_boundaries(all_onsets, visual_context_onsets, odour_context_onsets)
 
         # Create Trial Tensor
-        vis_1_trial_tensor = create_trial_tensor(delta_f_matrix, all_vis_1_onsets, trial_start, trial_stop)
-        print("Trial Tensor Shape: ", np.shape(vis_1_trial_tensor))
+        trial_tensor = create_trial_tensor(delta_f_matrix, all_onsets, trial_start, trial_stop)
+        print("Trial Tensor Shape", np.shape(trial_tensor))
 
         # Perform Tensor Decomposition
-        weights, factors = non_negative_parafac(vis_1_trial_tensor, rank=number_of_factors, init='svd', verbose=1, n_iter_max=250)
-        print("Tensor shape", np.shape(factors))
+        weights, factors = non_negative_parafac(trial_tensor, rank=number_of_factors, init='svd', verbose=1, n_iter_max=250)
+        #weights, factors = parafac(trial_tensor, rank=number_of_factors, init='svd', verbose=1, n_iter_max=250)
+
+        # Save Factors
+        factor_save_directory = base_directory + "/" + session_name
+        if not os.path.exists(factor_save_directory):
+            os.mkdir(factor_save_directory)
 
         trial_loadings = factors[0]
         time_loadings = factors[1]
         neuron_loadings = factors[2]
 
+        np.save(os.path.join(factor_save_directory, "trial_loadings.npy"),  trial_loadings)
+        np.save(os.path.join(factor_save_directory, "time_loadings.npy"),   time_loadings)
+        np.save(os.path.join(factor_save_directory, "neuron_loadings.npy"), neuron_loadings)
+        np.save(os.path.join(factor_save_directory, "all_onsets.npy"),  all_onsets)
+        np.save(os.path.join(factor_save_directory, "perfect_switch_trials.npy"),  perfect_switch_trials)
+        np.save(os.path.join(factor_save_directory, "visual_blocks.npy"),  visual_blocks)
+        np.save(os.path.join(factor_save_directory, "odour_blocks.npy"),  odour_blocks)
+        np.save(os.path.join(factor_save_directory, "switch_indicies.npy"), switch_indexes)
 
-        plot_factors(trial_loadings, time_loadings, switch_indexes, visual_blocks, odour_blocks, save_directory, session_name, trial_start, perfect_switch_trials)
+        if stimuli == "vis_1":
+            plot_factors(trial_loadings, time_loadings, visual_blocks, odour_blocks, plot_save_directory, session_name, trial_start, plot_switching=True, switch_indexes=switch_indexes, perfect_switch_trials=perfect_switch_trials)
+        elif stimuli == "vis_2":
+            plot_factors(trial_loadings, time_loadings, visual_blocks, odour_blocks, plot_save_directory, session_name, trial_start)
+        elif stimuli == "all":
+            plot_factors_combined(trial_loadings, time_loadings, visual_blocks, odour_blocks, plot_save_directory, session_name, trial_start, vis_1_indexes, vis_2_indexes, plot_switching=True, switch_indexes=switch_indexes, perfect_switch_trials=perfect_switch_trials)
 
+
+def load_matlab_sessions(base_directory):
+
+    matlab_file_list = []
+    all_files = os.listdir(base_directory)
+    for file in all_files:
+        if file[-3:] == "mat":
+            matlab_file_list.append(os.path.join(base_directory, file))
+
+    return matlab_file_list
+
+
+# Set Number of Factors
+number_of_factors = 7
 
 # Load Matlab Data
-
-# Load Matlab Data
-file_list = ["/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201022_112044__ACV004_B3_SWITCH_preprocessed_basic.mat",
-             "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201016_113151__ACV004_B2_SWITCH_preprocessed_basic.mat",
-             "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201026_103629__ACV014_B3_SWITCH_preprocessed_basic.mat",
-             "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201024_104327__ACV005_B3_SWITCH_preprocessed_basic.mat",
-             "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201026_122511__ACV011_B3_SWITCH_preprocessed_basic.mat",
-             "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201103_160924__ACV013_B3_SWITCH_preprocessed_basic.mat",
-             "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201029_145825__ACV011_B3_SWITCH_preprocessed_basic.mat",
-             "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201021_121703__ACV005_B3_SWITCH_preprocessed_basic.mat",
-             "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201027_140620__ACV013_B3_SWITCH_preprocessed_basic.mat",
-             "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20200922_114059__ACV003_B3_SWITCH_preprocessed_basic.mat"]
+base_directory = "/media/matthew/29D46574463D2856/Nick_TCA_Plots/"
+file_list = load_matlab_sessions(base_directory)
 
 
-save_directory = "/home/matthew/Pictures/TCA_Plots/"
-perform_tensor_component_analysis(file_list, save_directory, number_of_factors=7)
+
+# Perform TCA On All Vis Onsets
+plot_save_directory = "/home/matthew/Pictures/TCA_Plots/Combined_TCA/"
+perform_tensor_component_analysis(file_list, base_directory, plot_save_directory, stimuli='all', number_of_factors=7)
+
+# Perform TCA On Vis 1 Onsets
+#plot_save_directory = "/home/matthew/Pictures/TCA_Plots/Vis_1_TCA/"
+#perform_tensor_component_analysis(file_list, base_directory, plot_save_directory, number_of_factors=number_of_factors)
+
+# Perform TCA On VIs 2 Onsets
+#plot_save_directory = "/home/matthew/Pictures/TCA_Plots/Vis_2_TCA/"
+#perform_tensor_component_analysis(file_list, base_directory, plot_save_directory, stimuli='vis_2', number_of_factors=7)
