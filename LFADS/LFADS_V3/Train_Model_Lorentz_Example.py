@@ -191,20 +191,19 @@ def load_pseudodata(session_list):
 
 
 
-def load_data(session_list, condition_names, trial_start, trial_stop):
+def load_data(session_list):
 
     # Get Data Structure
     input_data = []
     session_neuron_numbers = []
     session_trial_numbers = []
     trial_length = 0
-    condition_1_tensor_list = []
-    condition_2_tensor_list = []
+
 
     for session in session_list:
 
         # Load Session Data
-        condition_1_tensor, condition_2_tensor, full_tensor = load_session_data(session, condition_names, trial_start, trial_stop)
+        full_tensor = np.load(session)
 
         # Get Session Structure
         session_trials = np.shape(full_tensor)[0]
@@ -212,8 +211,6 @@ def load_data(session_list, condition_names, trial_start, trial_stop):
         session_neurons = np.shape(full_tensor)[2]
 
         input_data.append(full_tensor)
-        condition_1_tensor_list.append(condition_1_tensor)
-        condition_2_tensor_list.append(condition_2_tensor)
         session_neuron_numbers.append(session_neurons)
         session_trial_numbers.append(session_trials)
 
@@ -222,7 +219,7 @@ def load_data(session_list, condition_names, trial_start, trial_stop):
     input_tensor = [input_data]
     input_tensor = tf.ragged.constant(input_tensor, dtype=tf.float32)
 
-    return input_tensor, input_data, session_neuron_numbers, session_trial_numbers, trial_length, condition_1_tensor_list, condition_2_tensor_list
+    return input_tensor, input_data, session_neuron_numbers, session_trial_numbers, trial_length
 
 
 
@@ -249,7 +246,7 @@ def load_session_data(matlab_file, condition_names, trial_start, trial_stop):
         return condition_1_tensor, condition_2_tensor, full_tensor
 
 
-def train_model(model, input_tensor, condition_1_data_list, condition_2_data_list, plot_save_directory, weight_save_directory, visualise=False):
+def train_model(model, input_tensor, input_data, plot_save_directory, weight_save_directory, visualise=False):
 
     # Convered and Epoch Count Variables
     converged = False
@@ -259,7 +256,7 @@ def train_model(model, input_tensor, condition_1_data_list, condition_2_data_lis
     # Learning Rate Parameters
     initital_learning_rate = 0.001
     learning_rate_stop     = 0.00001
-    current_learning_rate =                                                                         initital_learning_rate
+    current_learning_rate = initital_learning_rate
     learning_rate_decay_factor = 0.95
 
     monitoring_window_size = 6
@@ -314,14 +311,14 @@ def train_model(model, input_tensor, condition_1_data_list, condition_2_data_lis
         if epoch_count % divisor == 0:
 
             # Visualise
-            Visualise_Model.visualise_model(model, condition_1_data_list, condition_2_data_list, epoch_count, divisor, plot_save_directory)
+            Visualise_Model.visualise_model_lorentz(model, input_data, epoch_count, divisor, plot_save_directory)
             model.save_weights(model_save_directory)
 
         # Check For Convergence
         if current_learning_rate < learning_rate_stop:
             print("Converged! ")
             converged = True
-            Visualise_Model.visualise_model(model, condition_1_data_list, condition_2_data_list, epoch_count, divisor, plot_save_directory)
+            Visualise_Model.visualise_model_lorentz(model, input_data, epoch_count, divisor, plot_save_directory)
 
             # Save Model
             model.save_weights(model_save_directory)
@@ -337,47 +334,26 @@ def train_model(model, input_tensor, condition_1_data_list, condition_2_data_lis
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-
-"""
-
-"""
-
-
 # Load Data
-session_list = ["/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201022_112044__ACV004_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201016_113151__ACV004_B2_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201026_103629__ACV014_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201024_104327__ACV005_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201026_122511__ACV011_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201103_160924__ACV013_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201029_145825__ACV011_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201021_121703__ACV005_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201027_140620__ACV013_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20200922_114059__ACV003_B3_SWITCH_preprocessed_basic.mat"]
-
-# Model Parameters
-number_of_factors = 25
-latent_dimensions = 64
+session_list = ["/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Pseudo_data/Session_0/High_Dimensional_Data.npy",
+                "/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Pseudo_data/Session_1/High_Dimensional_Data.npy",
+                "/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Pseudo_data/Session_2/High_Dimensional_Data.npy",
+                "/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Pseudo_data/Session_3/High_Dimensional_Data.npy",
+                "/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Pseudo_data/Session_4/High_Dimensional_Data.npy"]
 
 # Load Data
 number_of_sessions = len(session_list)
-condition_names = None
-trial_start = -6
-trial_stop = 18
-input_tensor, input_data, session_neuron_numbers, session_trial_numbers, trial_length, condition_1_tensor_list, condition_2_tensor_list = load_data(session_list, condition_names, trial_start, trial_stop)
+input_tensor, input_data, session_neuron_numbers, session_trial_numbers, trial_length = load_data(session_list)
 
-# Create Alignment Matricies
-alignmnet_matricies = align_sessions(session_list, condition_1_tensor_list, condition_2_tensor_list, number_of_factors, display=False)
-print("Alignment Matcieis", np.shape(alignmnet_matricies[0]))
+# Model Parameters
+number_of_factors = 10
+latent_dimensions = 3
 
 # Create Model
-model = LFADS_Model_V3.LFADS_Model(session_neuron_numbers, session_trial_numbers, number_of_factors, trial_length, number_of_sessions, latent_dimensions, alignment=alignmnet_matricies)
-
-
+model = LFADS_Model_V3.LFADS_Model(session_neuron_numbers, session_trial_numbers, number_of_factors, trial_length, number_of_sessions, latent_dimensions)
 
 # Setup Save Directories
-plot_save_directory = r"/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Output_Plots"
+plot_save_directory = r"/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Lorentz_Example_Output_Plots"
 weight_save_directory = r"/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Model_Weights"
 
-
-train_model(model, input_tensor, condition_1_tensor_list, condition_2_tensor_list, plot_save_directory, weight_save_directory, visualise=True)
+train_model(model, input_tensor, input_data, plot_save_directory, weight_save_directory, visualise=True)

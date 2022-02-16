@@ -12,7 +12,7 @@ import matplotlib.gridspec as gridspec
 import os
 
 import Custom_Layers
-
+import jPCA
 
 
 
@@ -52,6 +52,8 @@ def view_encoding(model, test_data, initial_conditions, save_directory, index):
 
 def view_trajectories(model, number_of_sessions, high_dimensional_data, trajectory_axis, epoch, divisor):
 
+    low_d_trajectory_list = []
+
     # Get Encoder and Generator
     encoder = model.encoder
     generator = model.generator
@@ -76,7 +78,7 @@ def view_trajectories(model, number_of_sessions, high_dimensional_data, trajecto
 
         # Generate Low D Trajectories From Initial States
         low_d_trajectories = generator(initial_states)
-        #print("Low D Trajectories", np.shape(low_d_trajectories))
+        low_d_trajectory_list.append(low_d_trajectories)
 
         colour = colourmap(float(session_index)/number_of_sessions)
         for trajectory in low_d_trajectories:
@@ -87,9 +89,231 @@ def view_trajectories(model, number_of_sessions, high_dimensional_data, trajecto
     trajectory_axis.axis('off')
     trajectory_axis.set_title('Epoch: ' + str(epoch))
 
+    return low_d_trajectory_list
+
+
+def view_trajectories_jpca(model, number_of_sessions, condition_1_data_list, condition_2_data_list, trajectory_axis, epoch, divisor):
+
+
+    # Get Encoder and Generator
+    encoder = model.encoder
+    generator = model.generator
+
+    colourmap = cm.get_cmap('hsv')
+
+    low_d_trajectory_list = []
+    colour_list = []
+
+    for session_index in range(number_of_sessions):
+
+        # Input Translation Weight
+        condition_1_data = condition_1_data_list[session_index]
+        condition_2_data = condition_2_data_list[session_index]
+
+        # Translate To Factors
+        session_input_translation_weights = model.input_translation_weights_list[session_index]
+        session_input_translation_weights = np.array(session_input_translation_weights)
+
+        # If We Have Condition 1 Type Data
+        if np.shape(condition_1_data)[0] > 0:
+            condition_1_data_factors = np.matmul(condition_1_data, session_input_translation_weights)
+            condition_1_z_mean, condition_1_z_log_var, condition_1_initial_states = encoder(condition_1_data_factors)
+            condition_1_low_d_trajectories = generator(condition_1_initial_states)
+
+            for trajectory in condition_1_low_d_trajectories:
+                low_d_trajectory_list.append(trajectory)
+                colour_list.append('g')
+
+        # If We Have Condition 2 Type Data
+        if np.shape(condition_2_data)[0] > 0:
+            condition_2_data_factors = np.matmul(condition_2_data, session_input_translation_weights)
+            condition_2_z_mean, condition_2_z_log_var, condition_2_initial_states = encoder(condition_2_data_factors)
+            condition_2_low_d_trajectories = generator(condition_2_initial_states)
+
+            for trajectory in condition_2_low_d_trajectories:
+                low_d_trajectory_list.append(trajectory)
+                colour_list.append('r')
+
+
+    # Perform JPCA
+    low_d_trajectory_list = np.array(low_d_trajectory_list)
+    jpca = jPCA.JPCA(num_jpcs=2)
+    (projected, full_data_var, pca_var_capt, jpca_var_capt) = jpca.fit(low_d_trajectory_list)
+
+    number_of_trajectories = np.shape(low_d_trajectory_list)[0]
+
+    # Plot Trajectories
+    for trajectory_index in range(number_of_trajectories):
+        trajectory = projected[trajectory_index]
+        colour = colour_list[trajectory_index]
+        trajectory_axis.plot(trajectory[:, 0], trajectory[:, 1], c=colour, alpha=0.2)
+
+    # Scatter Start Points
+    for trajectory_index in range(number_of_trajectories):
+        trajectory = projected[trajectory_index]
+        colour = colour_list[trajectory_index]
+        trajectory_axis.scatter([trajectory[0, 0]], [trajectory[0, 1]], c=colour, alpha=0.2)
+
+    trajectory_axis.axis('off')
+    trajectory_axis.set_title('Epoch: ' + str(epoch))
 
 
 
+
+def view_trajectories_jpca_many(model, number_of_sessions, condition_1_data_list, condition_2_data_list, condition_3_data_list, condition_4_data_list, trajectory_axis, epoch, divisor):
+
+
+    # Get Encoder and Generator
+    encoder = model.encoder
+    generator = model.generator
+
+    colourmap = cm.get_cmap('hsv')
+
+    low_d_trajectory_list = []
+    colour_list = []
+    alpha_list = []
+
+    for session_index in range(number_of_sessions):
+
+        # Input Translation Weight
+        condition_1_data = condition_1_data_list[session_index]
+        condition_2_data = condition_2_data_list[session_index]
+        condition_3_data = condition_3_data_list[session_index]
+        condition_4_data = condition_4_data_list[session_index]
+
+        # Translate To Factors
+        session_input_translation_weights = model.input_translation_weights_list[session_index]
+        session_input_translation_weights = np.array(session_input_translation_weights)
+
+        # If We Have Condition 1 Type Data
+        if np.shape(condition_1_data)[0] > 0:
+            condition_1_data_factors = np.matmul(condition_1_data, session_input_translation_weights)
+            condition_1_z_mean, condition_1_z_log_var, condition_1_initial_states = encoder(condition_1_data_factors)
+            condition_1_low_d_trajectories = generator(condition_1_initial_states)
+
+            for trajectory in condition_1_low_d_trajectories:
+                low_d_trajectory_list.append(trajectory)
+                colour_list.append('m')
+                alpha_list.append(0.8)
+
+        # If We Have Condition 2 Type Data
+        if np.shape(condition_2_data)[0] > 0:
+            condition_2_data_factors = np.matmul(condition_2_data, session_input_translation_weights)
+            condition_2_z_mean, condition_2_z_log_var, condition_2_initial_states = encoder(condition_2_data_factors)
+            condition_2_low_d_trajectories = generator(condition_2_initial_states)
+
+            for trajectory in condition_2_low_d_trajectories:
+                low_d_trajectory_list.append(trajectory)
+                colour_list.append('orange')
+                alpha_list.append(0.8)
+
+        # If We Have Condition 3 Type Data
+        if np.shape(condition_3_data)[0] > 0:
+            condition_3_data_factors = np.matmul(condition_3_data, session_input_translation_weights)
+            condition_3_z_mean, condition_3_z_log_var, condition_3_initial_states = encoder(condition_3_data_factors)
+            condition_3_low_d_trajectories = generator(condition_3_initial_states)
+
+            for trajectory in condition_3_low_d_trajectories:
+                low_d_trajectory_list.append(trajectory)
+                colour_list.append('g')
+                alpha_list.append(0.1)
+
+        # If We Have Condition 4 Type Data
+        if np.shape(condition_4_data)[0] > 0:
+            condition_4_data_factors = np.matmul(condition_4_data, session_input_translation_weights)
+            condition_4_z_mean, condition_4_z_log_var, condition_4_initial_states = encoder(condition_4_data_factors)
+            condition_4_low_d_trajectories = generator(condition_4_initial_states)
+
+            for trajectory in condition_4_low_d_trajectories:
+                low_d_trajectory_list.append(trajectory)
+                colour_list.append('b')
+                alpha_list.append(0.1)
+
+    # Perform JPCA
+    low_d_trajectory_list = np.array(low_d_trajectory_list)
+    jpca = jPCA.JPCA(num_jpcs=2)
+    (projected, full_data_var, pca_var_capt, jpca_var_capt) = jpca.fit(low_d_trajectory_list)
+
+    number_of_trajectories = np.shape(low_d_trajectory_list)[0]
+
+    # Plot Trajectories
+    for trajectory_index in range(number_of_trajectories):
+        trajectory = projected[trajectory_index]
+        colour = colour_list[trajectory_index]
+        alpha = alpha_list[trajectory_index]
+        trajectory_axis.plot(trajectory[:, 0], trajectory[:, 1], c=colour, alpha=alpha)
+
+    # Scatter Start Points
+    for trajectory_index in range(number_of_trajectories):
+        trajectory = projected[trajectory_index]
+        colour = colour_list[trajectory_index]
+        alpha = alpha_list[trajectory_index]
+        trajectory_axis.scatter([trajectory[0, 0]], [trajectory[0, 1]], c=colour, alpha=alpha)
+
+    trajectory_axis.axis('off')
+    trajectory_axis.set_title('Epoch: ' + str(epoch))
+
+
+def view_trajectories_jpca_interactive(model, number_of_sessions, condition_1_data_list, condition_2_data_list, trajectory_axis, epoch, divisor):
+
+
+    # Get Encoder and Generator
+    encoder = model.encoder
+    generator = model.generator
+
+    colourmap = cm.get_cmap('hsv')
+
+    low_d_trajectory_list = []
+    colour_list = []
+
+    for session_index in range(number_of_sessions):
+
+        # Input Translation Weight
+        condition_1_data = condition_1_data_list[session_index]
+        condition_2_data = condition_2_data_list[session_index]
+
+        # Translate To Factors
+        session_input_translation_weights = model.input_translation_weights_list[session_index]
+        session_input_translation_weights = np.array(session_input_translation_weights)
+        condition_1_data_factors = np.matmul(condition_1_data, session_input_translation_weights)
+        condition_2_data_factors = np.matmul(condition_2_data, session_input_translation_weights)
+
+        # Encoder To Initial States
+        condition_1_z_mean, condition_1_z_log_var, condition_1_initial_states = encoder(condition_1_data_factors)
+        condition_2_z_mean, condition_2_z_log_var, condition_2_initial_states = encoder(condition_2_data_factors)
+
+        # Generate Low D Trajectories From Initial States
+        condition_1_low_d_trajectories = generator(condition_1_initial_states)
+        condition_2_low_d_trajectories = generator(condition_2_initial_states)
+
+        for trajectory in condition_1_low_d_trajectories:
+            low_d_trajectory_list.append(trajectory)
+            colour_list.append('g')
+
+        for trajectory in condition_2_low_d_trajectories:
+            low_d_trajectory_list.append(trajectory)
+            colour_list.append('r')
+
+    # Perform JPCA
+    low_d_trajectory_list = np.array(low_d_trajectory_list)
+    jpca = jPCA.JPCA(num_jpcs=4)
+    (projected, full_data_var, pca_var_capt, jpca_var_capt) = jpca.fit(low_d_trajectory_list)
+
+    number_of_trajectories = np.shape(low_d_trajectory_list)[0]
+
+    # Plot Trajectories
+    for trajectory_index in range(number_of_trajectories):
+        trajectory = projected[trajectory_index]
+        colour = colour_list[trajectory_index]
+        trajectory_axis.plot(trajectory[:, 0], trajectory[:, 1], trajectory[:, 2], c=colour, alpha=0.1)
+
+    # Scatter Start Points
+    for trajectory_index in range(number_of_trajectories):
+        trajectory = projected[trajectory_index]
+        trajectory_axis.scatter([trajectory[0, 0]], [trajectory[0, 1], trajectory[0,2]], c='k', alpha=0.1)
+
+    trajectory_axis.axis('off')
+    trajectory_axis.set_title('Epoch: ' + str(epoch))
 
 
 def view_decoding(model, low_dimensional_trajectories, high_dimensional_data, index, decoding_axis_list):
@@ -122,14 +346,35 @@ def view_decoding(model, low_dimensional_trajectories, high_dimensional_data, in
 
 
 
+def visualise_model_lorentz(model, data_list, epoch_step, divisor, save_directory):
 
-def visualise_model(model, input_data, epoch_step, divisor, save_directory):
-
-    # Get Number Of Sessions
-    number_of_sessions = len(input_data)
+    number_of_sessions = len(data_list)
 
     # Create Figure
     figure_1 = plt.figure(constrained_layout=True, figsize=(14, 6))
+    trajectory_axis = figure_1.add_subplot(1, 1, 1, projection='3d')
+
+    # View Trajectories
+    low_d_trajectory_list = view_trajectories(model, number_of_sessions, data_list, trajectory_axis, epoch_step, divisor)
+
+    # Save Figure
+    plt.draw()
+    figure_1.savefig(os.path.join(save_directory, str(epoch_step).zfill(4) + ".png"))
+    plt.close()
+
+    np.save(os.path.join(save_directory, str(epoch_step).zfill(4) + ".npy"), low_d_trajectory_list)
+
+
+
+def visualise_model(model, condition_1_data_list, condition_2_data_list, epoch_step, divisor, save_directory):
+
+    # Get Number Of Sessions
+    number_of_sessions = len(condition_1_data_list)
+
+    # Create Figure
+    figure_1 = plt.figure(constrained_layout=True, figsize=(14, 6))
+
+    """
     figure_1_spec = gridspec.GridSpec(ncols=4, nrows=3, figure=figure_1)
     trajectory_axis             = figure_1.add_subplot(figure_1_spec[0:3, 0:2], projection='3d')
     decoding_1_real_axis        = figure_1.add_subplot(figure_1_spec[0, 2])
@@ -138,24 +383,47 @@ def visualise_model(model, input_data, epoch_step, divisor, save_directory):
     decoding_2_predicted_axis   = figure_1.add_subplot(figure_1_spec[1, 3])
     decoding_3_real_axis        = figure_1.add_subplot(figure_1_spec[2, 2])
     decoding_3_predicted_axis   = figure_1.add_subplot(figure_1_spec[2, 3])
+    """
+    trajectory_axis = figure_1.add_subplot(1,1,1, projection='3d')
 
+    """
     decoding_axis_list = [decoding_1_real_axis,
                           decoding_1_predicted_axis,
                           decoding_2_real_axis,
                           decoding_2_predicted_axis,
                           decoding_3_real_axis,
                           decoding_3_predicted_axis]
-
+    """
 
 
     # View Trajectories
-    view_trajectories(model, number_of_sessions, input_data, trajectory_axis, epoch_step, divisor)
+    view_trajectories_jpca(model, number_of_sessions, condition_1_data_list, condition_2_data_list, trajectory_axis, epoch_step, divisor)
 
     # View Decoded Rasters
     #view_decoding(model, low_dimensional_data, high_dimensional_data, epoch, decoding_axis_list)
 
     # Save Figures
     #plt.show()
+
+    plt.draw()
+    figure_1.savefig(os.path.join(save_directory, str(epoch_step).zfill(4) + ".png"))
+    plt.close()
+
+
+
+
+
+def visualise_model_many_conditions(model, condition_1_data_list, condition_2_data_list, condition_3_data_list, condition_4_data_list, epoch_step, divisor, save_directory):
+
+    # Get Number Of Sessions
+    number_of_sessions = len(condition_1_data_list)
+
+    # Create Figure
+    figure_1 = plt.figure(constrained_layout=True, figsize=(14, 6))
+    trajectory_axis = figure_1.add_subplot(1,1,1, projection='3d')
+
+    # View Trajectories
+    view_trajectories_jpca_many(model, number_of_sessions, condition_1_data_list, condition_2_data_list, condition_3_data_list, condition_4_data_list, trajectory_axis, epoch_step, divisor)
 
     plt.draw()
     figure_1.savefig(os.path.join(save_directory, str(epoch_step).zfill(4) + ".png"))

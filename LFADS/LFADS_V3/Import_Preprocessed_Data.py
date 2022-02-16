@@ -5,7 +5,9 @@ import mat73
 
 class ImportMatLabData:
 
-    """A simple class to load the data for a single session and store it under one header
+    """
+    A simple class to load the data for a single session and store it under one header
+
     mismatch_trials structure:
     - exp_odour: frame indices for onset / offset of expected odour - after switching from odour block to visual block, V1 trials before mouse starts licking to visual gratings. Aligned to when odour would be expected to arrive.
     - no_odour: aligned as above, but to trials in which mouse is no longer expecting odour - V2 trials at the end of a visual block, before switch

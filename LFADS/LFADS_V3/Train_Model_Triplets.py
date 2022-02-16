@@ -160,38 +160,115 @@ def create_trial_tensor(delta_f_matrix, onsets, start_window, stop_window):
     return selected_data
 
 
-def load_pseudodata(session_list):
-
-    # Get Data Structure
-    input_data = []
-    session_neuron_numbers = []
-    session_trial_numbers = []
-    trial_length = 0
-
-    for session in session_list:
-
-        # Load Session Data
-        session_data = np.load(os.path.join(session, "High_Dimensional_Data.npy"))
-
-        # Get Session Structure
-        session_trials = np.shape(session_data)[0]
-        trial_length = np.shape(session_data)[1]
-        session_neurons = np.shape(session_data)[2]
-
-        input_data.append(session_data)
-        session_neuron_numbers.append(session_neurons)
-        session_trial_numbers.append(session_trials)
-
-        print("Session", session, "Number Of Trials", session_trials, "Number of neurons", session_neurons)
-
-    input_tensor = [input_data]
-    input_tensor = tf.ragged.constant(input_tensor, dtype=tf.float32)
-
-    return input_tensor, input_data, session_neuron_numbers, session_trial_numbers, trial_length
 
 
 
-def load_data(session_list, condition_names, trial_start, trial_stop):
+
+
+def load_session_data(matlab_file_location, session_name, behaviour_matrix_directory, trial_start, trial_stop):
+
+    # Load Matalb Data
+    data_object = Import_Preprocessed_Data.ImportMatLabData(matlab_file_location)
+
+    # Extract Delta F Matrix
+    delta_f_matrix = data_object.dF
+    delta_f_matrix = np.nan_to_num(delta_f_matrix)
+    delta_f_matrix = smooth_delta_f_matrix(delta_f_matrix)
+    delta_f_matrix = normalise_delta_f_matrix(delta_f_matrix)
+
+    # Load Behaviour Matrix
+    behaviour_matrix = np.load(os.path.join(behaviour_matrix_directory, session_name + "_preprocessed_basic", "Behaviour_Matrix.npy"), allow_pickle=True)
+    print("Behaviour matrix", np.shape(behaviour_matrix))
+
+
+    # Get Selected Trials
+    stable_odour_vis_1 = []
+    perfect_transition_vis_1 = []
+    imperfect_transition_vis_1 = []
+    stable_visual_vis_1 = []
+
+
+    number_of_trials = np.shape(behaviour_matrix)[0]
+    for trial_index in range(1, number_of_trials):
+
+        # Load Trial Data
+        trial_data = behaviour_matrix[trial_index]
+
+        # Is Trial Vis 1
+        trial_type = trial_data[1]
+        if trial_type == 1:
+
+            # Is Trial First In Block
+            first_in_block = trial_data[9]
+            if first_in_block == 1:
+
+                # Is Trial A Miss
+                lick_response = trial_data[2]
+                if lick_response == 0:
+
+                    # Check If Perfect Transition (Following Trial Is Correct)
+                    if behaviour_matrix[trial_index + 1][3] == 1:
+                        perfect_transition_vis_1.append(trial_index)
+
+                    else:
+                        imperfect_transition_vis_1.append(trial_index)
+
+            else:
+
+                # is trial a hit
+                trial_outcome = behaviour_matrix[trial_index][3]
+                if trial_outcome == 1:
+                    stable_visual_vis_1.append(trial_index)
+
+        # Is Odour
+        elif trial_type == 3 or trial_type == 4:
+
+            # irrel stim is vis 1
+            irrel_stim = behaviour_matrix[trial_index][6]
+            if irrel_stim == 1:
+
+                # Correctly Ignored
+                ignore_irrel = behaviour_matrix[trial_index][7]
+                if ignore_irrel == 1:
+
+                    # Trial Correct
+                    trial_outcome = behaviour_matrix[trial_index][3]
+                    if trial_outcome == 1:
+                        stable_odour_vis_1.append(trial_index)
+
+    # Get Selected Onsets
+    stable_odour_vis_1_onsets = []
+    perfect_transition_vis_1_onsets = []
+    imperfect_transition_vis_1_onsets = []
+    stable_visual_vis_1_onsets = []
+
+    for trial in stable_odour_vis_1:
+        stable_odour_vis_1_onsets.append(behaviour_matrix[trial][13])
+
+    for trial in perfect_transition_vis_1:
+        perfect_transition_vis_1_onsets.append(behaviour_matrix[trial][11])
+
+    for trial in imperfect_transition_vis_1:
+        imperfect_transition_vis_1_onsets.append(behaviour_matrix[trial][11])
+
+    for trial in stable_visual_vis_1:
+        stable_visual_vis_1_onsets.append(behaviour_matrix[trial][11])
+
+    # Combine Into All Onsets
+    all_onsets = stable_odour_vis_1_onsets + perfect_transition_vis_1_onsets + imperfect_transition_vis_1_onsets + stable_visual_vis_1_onsets
+
+    # Get Tensors
+    full_tensor = create_trial_tensor(delta_f_matrix, all_onsets, trial_start, trial_stop)
+    condition_1_tensor = create_trial_tensor(delta_f_matrix, perfect_transition_vis_1_onsets, trial_start, trial_stop)
+    condition_2_tensor = create_trial_tensor(delta_f_matrix, imperfect_transition_vis_1_onsets, trial_start, trial_stop)
+    condition_3_tensor = create_trial_tensor(delta_f_matrix, stable_odour_vis_1_onsets, trial_start, trial_stop)
+    condition_4_tensor = create_trial_tensor(delta_f_matrix, stable_visual_vis_1_onsets, trial_start, trial_stop)
+
+    return condition_1_tensor, condition_2_tensor, condition_3_tensor, condition_4_tensor, full_tensor
+
+
+
+def load_data(session_list, condition_names, trial_start, trial_stop, behaviour_matrix_trajectory):
 
     # Get Data Structure
     input_data = []
@@ -200,11 +277,18 @@ def load_data(session_list, condition_names, trial_start, trial_stop):
     trial_length = 0
     condition_1_tensor_list = []
     condition_2_tensor_list = []
+    condition_3_tensor_list = []
+    condition_4_tensor_list = []
 
     for session in session_list:
 
+        # Get Session Name
+        session_name = session.split('/')[-1]
+        session_name = session_name.replace("_preprocessed_basic.mat", "")
+        print("Performing Tensor Component Analysis for Session: ", session_name)
+
         # Load Session Data
-        condition_1_tensor, condition_2_tensor, full_tensor = load_session_data(session, condition_names, trial_start, trial_stop)
+        condition_1_tensor, condition_2_tensor, condition_3_tensor, condition_4_tensor, full_tensor = load_session_data(session, session_name, behaviour_matrix_directory, trial_start, trial_stop)
 
         # Get Session Structure
         session_trials = np.shape(full_tensor)[0]
@@ -214,6 +298,9 @@ def load_data(session_list, condition_names, trial_start, trial_stop):
         input_data.append(full_tensor)
         condition_1_tensor_list.append(condition_1_tensor)
         condition_2_tensor_list.append(condition_2_tensor)
+        condition_3_tensor_list.append(condition_3_tensor)
+        condition_4_tensor_list.append(condition_4_tensor)
+
         session_neuron_numbers.append(session_neurons)
         session_trial_numbers.append(session_trials)
 
@@ -222,44 +309,21 @@ def load_data(session_list, condition_names, trial_start, trial_stop):
     input_tensor = [input_data]
     input_tensor = tf.ragged.constant(input_tensor, dtype=tf.float32)
 
-    return input_tensor, input_data, session_neuron_numbers, session_trial_numbers, trial_length, condition_1_tensor_list, condition_2_tensor_list
+    return input_tensor, input_data, session_neuron_numbers, session_trial_numbers, trial_length, condition_1_tensor_list, condition_2_tensor_list, condition_3_tensor_list, condition_4_tensor_list
 
 
 
-def load_session_data(matlab_file, condition_names, trial_start, trial_stop):
-
-        # Create Matlab Object
-        data_object = Import_Preprocessed_Data.ImportMatLabData(matlab_file)
-
-        # Extract Delta F Matrix
-        delta_f_matrix = data_object.dF
-        delta_f_matrix = smooth_delta_f_matrix(delta_f_matrix)
-        delta_f_matrix = normalise_delta_f_matrix(delta_f_matrix)
-
-        # Extract Frame Onsets
-        condition_1_onsets = data_object.vis1_frames[0]
-        condition_2_onsets = data_object.irrel_vis1_frames[0]
-        expected_odour_trials = data_object.mismatch_trials['exp_odour'][0]
-
-        # Create Trial Tensor
-        condition_1_tensor = create_trial_tensor(delta_f_matrix, condition_1_onsets, trial_start, trial_stop)
-        condition_2_tensor = create_trial_tensor(delta_f_matrix, condition_2_onsets, trial_start, trial_stop)
-        full_tensor = np.concatenate([condition_1_tensor, condition_2_tensor])
-
-        return condition_1_tensor, condition_2_tensor, full_tensor
-
-
-def train_model(model, input_tensor, condition_1_data_list, condition_2_data_list, plot_save_directory, weight_save_directory, visualise=False):
+def train_model(model, input_tensor, condition_1_data_list, condition_2_data_list, condition_3_data_list, condition_4_data_list, plot_save_directory, weight_save_directory, visualise=False):
 
     # Convered and Epoch Count Variables
     converged = False
-    epoch_count = 0
-    divisor = 100
+    epoch_count = 10000
+    divisor = 1000
 
     # Learning Rate Parameters
     initital_learning_rate = 0.001
     learning_rate_stop     = 0.00001
-    current_learning_rate =                                                                         initital_learning_rate
+    current_learning_rate = initital_learning_rate
     learning_rate_decay_factor = 0.95
 
     monitoring_window_size = 6
@@ -314,14 +378,14 @@ def train_model(model, input_tensor, condition_1_data_list, condition_2_data_lis
         if epoch_count % divisor == 0:
 
             # Visualise
-            Visualise_Model.visualise_model(model, condition_1_data_list, condition_2_data_list, epoch_count, divisor, plot_save_directory)
+            Visualise_Model.visualise_model_many_conditions(model, condition_1_data_list, condition_2_data_list, condition_3_data_list, condition_4_data_list, epoch_count, divisor, plot_save_directory)
             model.save_weights(model_save_directory)
 
         # Check For Convergence
         if current_learning_rate < learning_rate_stop:
             print("Converged! ")
             converged = True
-            Visualise_Model.visualise_model(model, condition_1_data_list, condition_2_data_list, epoch_count, divisor, plot_save_directory)
+            Visualise_Model.visualise_model_many_conditions(model, condition_1_data_list, condition_2_data_list, condition_3_data_list, condition_4_data_list, epoch_count, divisor, plot_save_directory)
 
             # Save Model
             model.save_weights(model_save_directory)
@@ -331,6 +395,17 @@ def train_model(model, input_tensor, condition_1_data_list, condition_2_data_lis
 
 
 
+def load_matlab_sessions(base_directory):
+
+    matlab_file_list = []
+    all_files = os.listdir(base_directory)
+    for file in all_files:
+        if file[-3:] == "mat":
+            matlab_file_list.append(os.path.join(base_directory, file))
+
+    return matlab_file_list
+
+
 
 
 
@@ -338,46 +413,31 @@ def train_model(model, input_tensor, condition_1_data_list, condition_2_data_lis
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 
-"""
 
-"""
 
 
 # Load Data
-session_list = ["/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201022_112044__ACV004_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201016_113151__ACV004_B2_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201026_103629__ACV014_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201024_104327__ACV005_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201026_122511__ACV011_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201103_160924__ACV013_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201029_145825__ACV011_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201021_121703__ACV005_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20201027_140620__ACV013_B3_SWITCH_preprocessed_basic.mat",
-                "/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Combined_Sessions/20200922_114059__ACV003_B3_SWITCH_preprocessed_basic.mat"]
+base_directory = "/media/matthew/29D46574463D2856/Nick_TCA_Plots/Best_switching_sessions_all_sites"
+session_list = load_matlab_sessions(base_directory)
 
 # Model Parameters
-number_of_factors = 25
-latent_dimensions = 64
+number_of_factors = 50
+latent_dimensions = 10
 
 # Load Data
 number_of_sessions = len(session_list)
 condition_names = None
 trial_start = -6
-trial_stop = 18
-input_tensor, input_data, session_neuron_numbers, session_trial_numbers, trial_length, condition_1_tensor_list, condition_2_tensor_list = load_data(session_list, condition_names, trial_start, trial_stop)
-
-# Create Alignment Matricies
-alignmnet_matricies = align_sessions(session_list, condition_1_tensor_list, condition_2_tensor_list, number_of_factors, display=False)
-print("Alignment Matcieis", np.shape(alignmnet_matricies[0]))
+trial_stop = 25
+behaviour_matrix_directory = r"/home/matthew/Documents/Nick_Population_Analysis_Data/python_export/Behaviour_Matricies"
+input_tensor, input_data, session_neuron_numbers, session_trial_numbers, trial_length, condition_1_tensor_list, condition_2_tensor_list, condition_3_tensor_list, condition_4_tensor_list = load_data(session_list, condition_names, trial_start, trial_stop, behaviour_matrix_directory)
 
 # Create Model
-model = LFADS_Model_V3.LFADS_Model(session_neuron_numbers, session_trial_numbers, number_of_factors, trial_length, number_of_sessions, latent_dimensions, alignment=alignmnet_matricies)
-
-
+model = LFADS_Model_V3.LFADS_Model(session_neuron_numbers, session_trial_numbers, number_of_factors, trial_length, number_of_sessions, latent_dimensions)
 
 # Setup Save Directories
 plot_save_directory = r"/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Output_Plots"
 weight_save_directory = r"/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Model_Weights"
 
-
-train_model(model, input_tensor, condition_1_tensor_list, condition_2_tensor_list, plot_save_directory, weight_save_directory, visualise=True)
+model.load_weights(r"/home/matthew/Documents/Github_Code/Population_Analysis/LFADS/LFADS_V3/Model_Weights/10000_Model_weights")
+train_model(model, input_tensor, condition_1_tensor_list, condition_2_tensor_list, condition_3_tensor_list, condition_4_tensor_list, plot_save_directory, weight_save_directory, visualise=True)

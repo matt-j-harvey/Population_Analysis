@@ -15,7 +15,7 @@ import Custom_Layers
 
 class LFADS_Model(keras.Model):
 
-    def __init__(self, number_of_neurons_list, session_trial_list, number_of_factors, number_of_timepoints, number_of_sessions, latent_dimensions, **kwargs):
+    def __init__(self, number_of_neurons_list, session_trial_list, number_of_factors, number_of_timepoints, number_of_sessions, latent_dimensions, alignment=False, **kwargs):
         super(LFADS_Model, self).__init__(**kwargs)
 
         # Setup Variables
@@ -38,8 +38,22 @@ class LFADS_Model(keras.Model):
 
             session_neurons = self.number_of_neurons_list[session]
 
-            input_translation_weights = tf.Variable(initial_value=tf.random.normal([session_neurons, self.number_of_factors]), trainable=True, name=str(session) + "_input_translation_weights")
-            output_translation_weights = tf.Variable(initial_value=tf.random.normal([self.number_of_factors, session_neurons]), trainable=True, name=str(session) + "_output_translation_weights")
+            if alignment == False:
+                input_translation_weights = tf.Variable(initial_value=tf.random.normal([session_neurons, self.number_of_factors]), trainable=True, name=str(session) + "_input_translation_weights")
+                output_translation_weights = tf.Variable(initial_value=tf.random.normal([self.number_of_factors, session_neurons]), trainable=True, name=str(session) + "_output_translation_weights")
+
+            else:
+
+                regression_coefficients = alignment[session]
+                input_weights = np.transpose(regression_coefficients)
+                output_weights = np.linalg.pinv(input_weights)
+
+                input_weights = tf.convert_to_tensor(input_weights, dtype=tf.float32)
+                output_weights = tf.convert_to_tensor(output_weights, dtype=tf.float32)
+
+                input_translation_weights = tf.Variable(initial_value=input_weights, trainable=True, name=str(session) + "_input_translation_weights")
+                output_translation_weights = tf.Variable(initial_value=output_weights, trainable=True, name=str(session) + "_output_translation_weights")
+
 
             self.input_translation_weights_list.append(input_translation_weights)
             self.output_translation_weights_list.append(output_translation_weights)
@@ -52,7 +66,6 @@ class LFADS_Model(keras.Model):
 
         print(self.encoder.summary())
         print(self.generator.summary())
-
 
         # Setup Loss Tracking
         self.total_loss_tracker = keras.metrics.Mean(name="total_loss")
@@ -190,6 +203,14 @@ class LFADS_Model(keras.Model):
                 kl_loss += session_kl_loss
                 total_loss += session_reconstruction_loss + (self.kl_scale * session_kl_loss)
 
+            # Regularise Generator Weights
+            generator_uh_loss = 0.01 * tf.nn.l2_loss(self.generator.layers[1].Uh)
+            generator_uz_loss = 0.01 * tf.nn.l2_loss(self.generator.layers[1].Uz)
+
+            total_loss += generator_uz_loss
+            total_loss += generator_uh_loss
+
+        #new_total_loss = tf.reduce_mean(total_loss + generator_uh_weights)
 
         grads = tape.gradient(total_loss, self.trainable_weights)
         grads, _ = tf.clip_by_global_norm(grads, 200.0)

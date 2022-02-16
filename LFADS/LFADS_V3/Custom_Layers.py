@@ -248,7 +248,6 @@ class custom_gru(keras.layers.Layer):
         # 1.) Calculate Reset Vector
         r_t = tf.sigmoid(tf.tensordot(x_t, self.Wr, 1) + tf.tensordot(h_tm1, self.Ur, 1) + self.br)
 
-
         # 2.) Using the Reset Vector - Create a Candidate Hidden State
         proposal_input_component = tf.tensordot(x_t, self.Wh, 1)
         proposal_reset_component = tf.tensordot(tf.multiply(r_t, h_tm1), self.Uh, 1)
@@ -263,6 +262,9 @@ class custom_gru(keras.layers.Layer):
 
         # 4.) Using the Update Vector combine the previous hidden state and the candiate state in a certain ratio to create the final Hidden state
         h_t = tf.multiply(1 - z_t, h_tm1) + tf.multiply(z_t, h_proposal)
+
+        # Clip
+        h_t = tf.clip_by_value(h_t, clip_value_max=5, clip_value_min=-5)
 
         # 5.) Multiply Hidden State by Output Vectors To Get Output
         output = tf.tensordot(h_t, self.output_weights, 1)

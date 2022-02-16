@@ -254,7 +254,7 @@ def get_block_boundaries(combined_onsets, visual_context_onsets, odour_context_o
 
 
 
-def perform_tensor_component_analysis(file_list, base_directory, plot_save_directory, stimuli="vis_1", trial_start=-10, trial_stop=48, number_of_factors=7, offset=1):
+def perform_tensor_component_analysis(file_list, base_directory, plot_save_directory, stimuli="vis_1", trial_start=-6, trial_stop=17, number_of_factors=7):
 
     for matlab_file_location in file_list:
 
@@ -273,15 +273,25 @@ def perform_tensor_component_analysis(file_list, base_directory, plot_save_direc
         delta_f_matrix = normalise_delta_f_matrix(delta_f_matrix)
 
         # Extract Switch Trials
-        expected_odour_trials = data_object.mismatch_trials['exp_odour'][offset]
+        onset = 0
+        offset = 1
+        onset_or_offset = offset
+
+
+        print(data_object.mismatch_trials)
+        expected_odour_trials = data_object.mismatch_trials['exp_odour_vis'][onset_or_offset]
         perfect_switch_trials = data_object.mismatch_trials['perfect_switch']
+
+        print("Expected odour trials", expected_odour_trials)
 
         # Extract Visual Onsets
         if stimuli=='vis_1':
-            visual_context_onsets = data_object.vis1_frames[offset]
-            odour_context_onsets  = data_object.irrel_vis1_frames[offset]
+            visual_context_onsets = data_object.vis1_frames[onset_or_offset]
+            odour_context_onsets  = data_object.irrel_vis1_frames[onset_or_offset]
             all_onsets = np.concatenate([visual_context_onsets, odour_context_onsets])
             all_onsets.sort()
+
+            print("All onsets", all_onsets)
 
             # Get Trial Indexes Of Switches
             switch_indexes = []
@@ -290,16 +300,16 @@ def perform_tensor_component_analysis(file_list, base_directory, plot_save_direc
                 switch_indexes.append(index)
 
         if stimuli=='vis_2':
-            visual_context_onsets = data_object.vis2_frames[offset]
-            odour_context_onsets  = data_object.irrel_vis2_frames[offset]
+            visual_context_onsets = data_object.vis2_frames[onset_or_offset]
+            odour_context_onsets  = data_object.irrel_vis2_frames[onset_or_offset]
             all_onsets = np.concatenate([visual_context_onsets, odour_context_onsets])
             all_onsets.sort()
 
         if stimuli == 'all':
-            visual_context_onsets_vis_1 = data_object.vis1_frames[offset]
-            visual_context_onsets_vis_2 = data_object.vis2_frames[offset]
-            odour_context_onsets_vis_1  = data_object.irrel_vis1_frames[offset]
-            odour_context_onsets_vis_2  = data_object.irrel_vis2_frames[offset]
+            visual_context_onsets_vis_1 = data_object.vis1_frames[onset_or_offset]
+            visual_context_onsets_vis_2 = data_object.vis2_frames[onset_or_offset]
+            odour_context_onsets_vis_1  = data_object.irrel_vis1_frames[onset_or_offset]
+            odour_context_onsets_vis_2  = data_object.irrel_vis2_frames[onset_or_offset]
 
             all_onsets = np.concatenate([visual_context_onsets_vis_1, visual_context_onsets_vis_2, odour_context_onsets_vis_1, odour_context_onsets_vis_2])
             all_onsets.sort()
@@ -343,8 +353,8 @@ def perform_tensor_component_analysis(file_list, base_directory, plot_save_direc
         print("Trial Tensor Shape", np.shape(trial_tensor))
 
         # Perform Tensor Decomposition
-        weights, factors = non_negative_parafac(trial_tensor, rank=number_of_factors, init='svd', verbose=1, n_iter_max=250)
-        #weights, factors = parafac(trial_tensor, rank=number_of_factors, init='svd', verbose=1, n_iter_max=250)
+        weights, factors = non_negative_parafac(trial_tensor, rank=number_of_factors, init='random', verbose=1, n_iter_max=500)
+        #weights, factors = parafac(trial_tensor, rank=number_of_factors, init='svd', verbose=1, n_iter_max=500)
 
         # Save Factors
         factor_save_directory = base_directory + "/" + session_name
@@ -384,17 +394,16 @@ def load_matlab_sessions(base_directory):
 
 
 # Set Number of Factors
-number_of_factors = 7
+number_of_factors = 50
 
 # Load Matlab Data
-base_directory = "/media/matthew/29D46574463D2856/Nick_TCA_Plots/"
+base_directory = "/media/matthew/29D46574463D2856/Nick_TCA_Plots/Best_switching_sessions_all_sites"
 file_list = load_matlab_sessions(base_directory)
 
 
-
 # Perform TCA On All Vis Onsets
-plot_save_directory = "/home/matthew/Pictures/TCA_Plots/Combined_TCA/"
-perform_tensor_component_analysis(file_list, base_directory, plot_save_directory, stimuli='all', number_of_factors=7)
+plot_save_directory = "/home/matthew/Pictures/TCA_Plots/Best_All_Sites/"
+perform_tensor_component_analysis(file_list, base_directory, plot_save_directory, stimuli='vis_1', number_of_factors=number_of_factors)
 
 # Perform TCA On Vis 1 Onsets
 #plot_save_directory = "/home/matthew/Pictures/TCA_Plots/Vis_1_TCA/"
