@@ -10,10 +10,11 @@ from mvlearn.embed import GCCA
 
 
 
-def plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_components, unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints):
+def plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_components, unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints, opsin_list):
 
     cmap = cm.get_cmap('gist_rainbow')
-    
+    cmap_opsin = cm.get_cmap('Pastel1')
+    unique_opsins = np.unique(opsin_list)
 
     for component_index in range(number_of_components):
 
@@ -24,7 +25,9 @@ def plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_compon
         for session_index in range(number_of_sessions):
 
             component_trace = transformed_data[session_index][:, component_index]
-            axis_1.plot(component_trace)
+            found_opsin = np.argwhere(unique_opsins == opsin_list[session_index])
+            opsin_colour = cmap_opsin(found_opsin[0])[0]
+            axis_1.plot(component_trace, color=opsin_colour)
 
         # Draw Black Lines To Demarcate Conditions
         for x in range(0, number_of_timepoints, condition_length):
@@ -51,35 +54,88 @@ def plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_compon
         plt.show()
 
 
-
 def reshape_neural_data(neural_data_list):
 
     transformed_data = []
 
     for raster in neural_data_list:
-        dropped_raster = raster[0]
-        transposed_raster = np.transpose(dropped_raster)
+        #dropped_raster = raster[0]
+        transposed_raster = np.transpose(raster)
         transposed_raster = np.nan_to_num(transposed_raster)
         transformed_data.append(transposed_raster)
 
     return transformed_data
 
 
-def filter_by_opsin(neural_data_list, opsin_labels, selected_label):
+def filter_matlab_data(matlab_data, selected_opsin, selected_laser, filter_vip=False):
 
-    filtered_data = []
-    number_of_sessions = len(neural_data_list)
+    number_of_sessions = len(matlab_data['neural_data'])
+    opsin_list = matlab_data['opsin']
 
-    for session_index in range(number_of_sessions):
+    # Solve the problem of some variables being stuck in a sublist
+    if isinstance(matlab_data['neural_data'][0], list):
+        matlab_data['VIP_index'] = [x[0] for x in matlab_data['VIP_index']]
+        #matlab_data['opsin'] = [x[0] for x in matlab_data['opsin']]
+        matlab_data['neural_data'] = [x[0] for x in matlab_data['neural_data']]
 
-        opsin_type = opsin_labels[session_index][0]
+    laser_index_check = matlab_data['laser_data'][0, :] == selected_laser
+    vis_index_check = ['odr' not in x for x in matlab_data['stim_data'][0]]
+    timepoint_length = np.sum(np.logical_and(laser_index_check, vis_index_check))
 
+    if selected_opsin == 'all':
+        opsin_index = range(number_of_sessions)
+    else:
+        opsin_list = [x[0] == selected_opsin for x in opsin_list]
+        opsin_index = np.nonzero(opsin_list)
+        opsin_index = opsin_index[0]
 
-        if opsin_type == selected_label:
-            filtered_data.append(neural_data_list[session_index])
+    filtered_data = {'VIP_index': [],
+                     'cond_labels': [],
+                     'laser_data': np.empty((len(opsin_index), timepoint_length)),
+                     'mouse_name': [],
+                     'neural_data': [],
+                     'opsin': [],
+                     'recording_site': [],
+                     'session_name': [],
+                     'stim_data': [],
+                     'times': np.empty((len(opsin_index), timepoint_length))
+                     }
+
+    cc = 0
+    for session_index in opsin_index:
+        laser_index = matlab_data['laser_data'][session_index, :] == selected_laser
+        vis_index = ['odr' not in x for x in matlab_data['stim_data'][session_index]]
+        timepoint_filter = np.logical_and(laser_index, vis_index)
+
+        for key in matlab_data.keys():
+            if isinstance(matlab_data[key], list):
+
+                data_shape = np.shape(matlab_data[key][session_index])
+                if len(data_shape) == 1 and data_shape[0] == len(timepoint_filter):
+                    temp_data = np.array(matlab_data[key][session_index])
+                    filtered_data[key].append(temp_data[timepoint_filter])
+
+                elif len(data_shape) == 1:
+                    filtered_data[key].append(matlab_data[key][session_index])
+
+                elif len(data_shape) == 2:
+                    if data_shape[0] == len(timepoint_filter):
+                        filtered_data[key].append(matlab_data[key][session_index][timepoint_filter, :])
+                    elif data_shape[1] == len(timepoint_filter):
+                        if filter_vip:
+                            data_to_filter = matlab_data[key][session_index]
+                            data_to_filter = data_to_filter[np.logical_not(matlab_data['VIP_index'][session_index]), :]
+                            data_to_filter = data_to_filter[:, timepoint_filter]
+                            filtered_data[key].append(data_to_filter)
+                        else:
+                            filtered_data[key].append(matlab_data[key][session_index][:, timepoint_filter])
+
+            elif isinstance(matlab_data[key], np.ndarray):
+                filtered_data[key][cc, :] = matlab_data[key][session_index, timepoint_filter]
+
+        cc += 1
 
     return filtered_data
-
 
 
 def load_condition_labels(matlab_data):
@@ -102,26 +158,24 @@ def load_condition_labels(matlab_data):
     return unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints
 
 
-
-
 # Set File Location
-file_location = r"//media/matthew/29D46574463D2856/Dylan_Population_Data/Dylan_all_VIP_mice_GCCA_data.mat"
+file_location = r"E:\Data\GCCA_export\Dylan_all_VIP_mice_GCCA_data.mat"
 
 # Load Matlab Data
 matlab_data = mat73.loadmat(file_location)
 matlab_data = matlab_data['output_GCCA']
 
-# Get Opsin Labels
-opsin_labels = matlab_data['opsin']
-unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints = load_condition_labels(matlab_data)
+# Filter by opsin, laser and cell type
+filtered_data = filter_matlab_data(matlab_data, selected_opsin='all', selected_laser=0, filter_vip=True)
+
+filtered_opsins = filtered_data['opsin']
+
+# Get condition labels
+unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints = load_condition_labels(filtered_data)
 
 # Load and Transform Neural Data
-neural_data = matlab_data['neural_data']
+neural_data = filtered_data['neural_data']
 neural_data = reshape_neural_data(neural_data)
-
-# Filter By Opsin If You Want:
-neural_data = filter_by_opsin(neural_data, opsin_labels, selected_label='tdt')
-
 
 # Perform GCCA
 number_of_sessions = len(neural_data)
@@ -129,5 +183,14 @@ number_of_components = 30
 gcca_model =GCCA(n_components=number_of_components)
 transformed_data = gcca_model.fit_transform(neural_data)
 
+laser_data = filter_matlab_data(matlab_data, selected_opsin='all', selected_laser=100, filter_vip=True)
+laser_condition_labels, laser_condition_length, number_of_laser_conditions, number_of_laser_timepoints = load_condition_labels(laser_data)
+laser_neural_data = laser_data['neural_data']
+laser_neural_data = reshape_neural_data(laser_neural_data)
+projected_laser_data = gcca_model.transform(laser_neural_data)
+
 # Plot GCCA Data
-plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_components, unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints)
+plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_components, unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints, filtered_opsins)
+
+# Plot projected laser data
+plot_gcca_mean_traces(projected_laser_data, number_of_sessions, number_of_components, laser_condition_labels, laser_condition_length, number_of_laser_conditions, number_of_laser_timepoints, filtered_opsins)
