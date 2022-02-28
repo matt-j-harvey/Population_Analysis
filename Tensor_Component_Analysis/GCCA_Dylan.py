@@ -3,16 +3,18 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.pyplot import cm
 import os
-from scipy.io import loadmat
+from scipy.io import loadmat, savemat
 import mat73
-
+import pandas as pd
 from mvlearn.embed import GCCA
-
-
+from sklearn.cluster import OPTICS, AffinityPropagation, DBSCAN
+import jPCA
+from jPCA.util import load_churchland_data, plot_projections
+import seaborn as sns
 
 def plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_components, unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints, opsin_list):
 
-    cmap = cm.get_cmap('gist_rainbow')
+    cmap = cm.get_cmap('tab10')
     cmap_opsin = cm.get_cmap('Pastel1')
     unique_opsins = np.unique(opsin_list)
 
@@ -52,6 +54,24 @@ def plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_compon
         axis_1.legend(handles=patch_list)
         axis_1.set_title("Component: " + str(component_index))
         plt.show()
+
+
+def plot_clustering_labels(proj_matrices, session_data, n_components=4, method='OPTICS'):
+
+    for session in range(len(proj_matrices)):
+        cluster_data = proj_matrices[session][:, 0:n_components]
+        if method == 'OPTICS':
+            cluster_labels = OPTICS(min_samples=5).fit_predict(X=cluster_data)
+        elif method == 'DBSCAN':
+            cluster_labels = DBSCAN(min_samples=5).fit_predict(cluster_data)
+        elif method == 'Affinity':
+            cluster_labels = AffinityPropagation(random_state=5).fit_predict(cluster_data)
+
+        pd_labelled = pd.DataFrame(cluster_data)
+        pd_labelled['label'] = cluster_labels
+
+        #sns.jointplot(data=pd_labelled, x=0, y=1, hue='label')
+        sns.pairplot(data=pd_labelled, hue='label')
 
 
 def reshape_neural_data(neural_data_list):
@@ -125,6 +145,7 @@ def filter_matlab_data(matlab_data, selected_opsin, selected_laser, filter_vip=F
                         if filter_vip:
                             data_to_filter = matlab_data[key][session_index]
                             data_to_filter = data_to_filter[np.logical_not(matlab_data['VIP_index'][session_index]), :]
+                            #data_to_filter = data_to_filter[matlab_data['VIP_index'][session_index], :]
                             data_to_filter = data_to_filter[:, timepoint_filter]
                             filtered_data[key].append(data_to_filter)
                         else:
@@ -166,7 +187,7 @@ matlab_data = mat73.loadmat(file_location)
 matlab_data = matlab_data['output_GCCA']
 
 # Filter by opsin, laser and cell type
-filtered_data = filter_matlab_data(matlab_data, selected_opsin='all', selected_laser=0, filter_vip=True)
+filtered_data = filter_matlab_data(matlab_data, selected_opsin='all', selected_laser=0, filter_vip=False)
 
 filtered_opsins = filtered_data['opsin']
 
@@ -179,18 +200,45 @@ neural_data = reshape_neural_data(neural_data)
 
 # Perform GCCA
 number_of_sessions = len(neural_data)
-number_of_components = 30
+number_of_components = 20
 gcca_model =GCCA(n_components=number_of_components)
 transformed_data = gcca_model.fit_transform(neural_data)
 
-laser_data = filter_matlab_data(matlab_data, selected_opsin='all', selected_laser=100, filter_vip=True)
+laser_data = filter_matlab_data(matlab_data, selected_opsin='all', selected_laser=100, filter_vip=False)
 laser_condition_labels, laser_condition_length, number_of_laser_conditions, number_of_laser_timepoints = load_condition_labels(laser_data)
 laser_neural_data = laser_data['neural_data']
 laser_neural_data = reshape_neural_data(laser_neural_data)
 projected_laser_data = gcca_model.transform(laser_neural_data)
+
+
+#output_dict = {'GCCA_matrix': gcca_model.projection_mats_}
+#savemat(r"E:\Data\GCCA_export\GCCA_projection_matrices.mat", output_dict)
+
+
+plot_clustering_labels(gcca_model.projection_mats_, filtered_data, n_components=2, method='OPTICS')
 
 # Plot GCCA Data
 plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_components, unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints, filtered_opsins)
 
 # Plot projected laser data
 plot_gcca_mean_traces(projected_laser_data, number_of_sessions, number_of_components, laser_condition_labels, laser_condition_length, number_of_laser_conditions, number_of_laser_timepoints, filtered_opsins)
+
+
+'''
+# Load publicly available data from Mark Churchland's group
+path = "/Users/Bantin/Documents/Stanford/Linderman-Shenoy/jPCA_ForDistribution/exampleData.mat"
+datas, times = load_churchland_data(path)
+
+# Create a jPCA object
+jpca = jPCA.JPCA(num_jpcs=2)
+
+# Fit the jPCA object to data
+(projected,
+ full_data_var,
+ pca_var_capt,
+ jpca_var_capt) = jpca.fit(datas, times=times, tstart=-1, tend=1)
+
+# Plot the projected data
+plot_projections(projected)
+
+'''
