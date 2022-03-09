@@ -11,6 +11,10 @@ from sklearn.cluster import OPTICS, AffinityPropagation, DBSCAN
 import jPCA
 from jPCA.util import load_churchland_data, plot_projections
 import seaborn as sns
+from sklearn.model_selection import LeaveOneOut
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.neural_network import MLPClassifier
 
 def plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_components, unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints, opsin_list):
 
@@ -187,7 +191,7 @@ matlab_data = mat73.loadmat(file_location)
 matlab_data = matlab_data['output_GCCA']
 
 # Filter by opsin, laser and cell type
-filtered_data = filter_matlab_data(matlab_data, selected_opsin='all', selected_laser=0, filter_vip=False)
+filtered_data = filter_matlab_data(matlab_data, selected_opsin='ArchT', selected_laser=0, filter_vip=True)
 
 filtered_opsins = filtered_data['opsin']
 
@@ -204,18 +208,102 @@ number_of_components = 20
 gcca_model =GCCA(n_components=number_of_components)
 transformed_data = gcca_model.fit_transform(neural_data)
 
-laser_data = filter_matlab_data(matlab_data, selected_opsin='all', selected_laser=100, filter_vip=False)
+laser_data = filter_matlab_data(matlab_data, selected_opsin='ArchT', selected_laser=100, filter_vip=True)
 laser_condition_labels, laser_condition_length, number_of_laser_conditions, number_of_laser_timepoints = load_condition_labels(laser_data)
 laser_neural_data = laser_data['neural_data']
 laser_neural_data = reshape_neural_data(laser_neural_data)
 projected_laser_data = gcca_model.transform(laser_neural_data)
 
+'''
+names = [
+    "Nearest Neighbors",
+    "Linear SVM",
+    "RBF SVM",
+    "Neural Net",
+]
 
+classifiers = [
+    KNeighborsClassifier(3),
+    SVC(kernel="linear", C=0.025),
+    SVC(gamma=2, C=1),
+    MLPClassifier(alpha=1, max_iter=1000),
+]
+
+
+laser_data['opsin'] = [x[0] for x in laser_data['opsin']]
+uniqueOpsins = list(set(laser_data['opsin']))
+opsin_Id = [uniqueOpsins.index(x) for x in laser_data['opsin']]
+opsin_Id = np.array(opsin_Id)
+
+performance = np.empty([len(classifiers), np.shape(projected_laser_data)[1]])
+# loop through classifier
+counter = 0
+for name, clf in zip(names, classifiers):
+    print('Fitting classifier:' + name)
+    # Loop through temporal components
+# for cc in range(5):
+
+    # Loop through timepoint
+    for tt in range(np.shape(projected_laser_data)[1]):
+        selectData = projected_laser_data[:, tt, [0, 1, 2]]
+
+        # leave one out cross validation
+        loo = LeaveOneOut()
+        cv_scores = []
+        for train_index, test_index in loo.split(selectData):
+            clf.fit(selectData[train_index, :], opsin_Id[train_index])
+            cv_scores.append(clf.score(selectData[test_index, :], opsin_Id[test_index]))
+
+        performance[counter, tt] = np.mean(cv_scores)
+
+    counter += 1
+
+# Plot classifier performance
+cmap = cm.get_cmap('tab10')
+clf_map = cm.get_cmap('Set2')
+figure_1 = plt.figure()
+axis_1 = figure_1.add_subplot(1, 1, 1)
+colour_list = []
+
+line_list = []
+for cc in range(len(classifiers)):
+    clf_line = axis_1.plot(performance[cc, :], color=clf_map(cc/len(classifiers)), label=names[cc])
+    line_list.append(clf_line)
+
+plt.axhline(y=0.33, color='k', linestyle=':')
+
+# Draw Black Lines To Demarcate Conditions
+for x in range(0, number_of_timepoints, condition_length):
+    axis_1.axvline(x, ymin=-1, ymax=1, color='k')
+
+# Shade Conditions
+for condition_index in range(0, number_of_conditions):
+    condition_colour = cmap(float(condition_index) / number_of_conditions)
+    colour_list.append(condition_colour)
+
+    start = condition_index * condition_length
+    stop = start + condition_length
+
+    axis_1.axvspan(xmin=start, xmax=stop - 1, facecolor=condition_colour, alpha=0.3)
+
+# Add Legengs
+patch_list = []
+for condition_index in range(number_of_conditions):
+    patch = mpatches.Patch(color=colour_list[condition_index], label=unique_condition_labels[condition_index],
+                                   alpha=0.3)
+    patch_list.append(patch)
+
+line_list = [x[0] for x in line_list]
+axis_1.legend(handles=line_list)
+plt.ylabel('Decoding performance')
+
+plt.show()
+'''
 #output_dict = {'GCCA_matrix': gcca_model.projection_mats_}
 #savemat(r"E:\Data\GCCA_export\GCCA_projection_matrices.mat", output_dict)
 
 
-plot_clustering_labels(gcca_model.projection_mats_, filtered_data, n_components=2, method='OPTICS')
+#plot_clustering_labels(gcca_model.projection_mats_, filtered_data, n_components=2, method='OPTICS')
 
 # Plot GCCA Data
 plot_gcca_mean_traces(transformed_data, number_of_sessions, number_of_components, unique_condition_labels, condition_length, number_of_conditions, number_of_timepoints, filtered_opsins)
